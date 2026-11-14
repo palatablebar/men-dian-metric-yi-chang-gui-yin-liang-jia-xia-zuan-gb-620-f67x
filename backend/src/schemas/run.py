@@ -11,3 +11,4 @@ class RunIn(BaseModel):
     threshold: float = Field(default=3.5, ge=1.0, le=10.0)
     persist_z: float = Field(default=1.5, ge=0.0, le=10.0)
     stratify: bool = True
+    detect_channels: bool = True

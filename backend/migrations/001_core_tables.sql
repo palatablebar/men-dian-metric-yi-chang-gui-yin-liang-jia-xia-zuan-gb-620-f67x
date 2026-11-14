@@ -45,21 +45,24 @@ CREATE TABLE metric_points (
 );
 
 CREATE TABLE runs (
-  id             BIGINT PRIMARY KEY AUTO_INCREMENT,
-  run_no         VARCHAR(40) NOT NULL UNIQUE,
-  store_id       BIGINT NULL,
-  trigger_kind   VARCHAR(20) NOT NULL,
-  status         VARCHAR(20) NOT NULL,
-  operator_email VARCHAR(160) NOT NULL,
-  store_count    INT NOT NULL DEFAULT 0,
-  point_count    INT NOT NULL DEFAULT 0,
-  anomaly_count  INT NOT NULL DEFAULT 0,
-  params         JSON,
-  metrics        JSON,
-  log_text       TEXT,
-  seed_key       VARCHAR(120) UNIQUE,
-  started_at     DATETIME NOT NULL,
-  finished_at    DATETIME
+  id                 BIGINT PRIMARY KEY AUTO_INCREMENT,
+  run_no             VARCHAR(40) NOT NULL UNIQUE,
+  store_id           BIGINT NULL,
+  trigger_kind       VARCHAR(20) NOT NULL,
+  status             VARCHAR(20) NOT NULL,
+  operator_email     VARCHAR(160) NOT NULL,
+  store_count        INT NOT NULL DEFAULT 0,
+  point_count        INT NOT NULL DEFAULT 0,
+  anomaly_count      INT NOT NULL DEFAULT 0,
+  params             JSON,
+  metrics            JSON,
+  log_text           TEXT,
+  seed_key           VARCHAR(120) UNIQUE,
+  checkpoint         JSON,
+  recovered_from_id  BIGINT NULL,
+  started_at         DATETIME NOT NULL,
+  finished_at        DATETIME,
+  INDEX ix_runs_recovered_from_id (recovered_from_id)
 );
 
 CREATE TABLE anomalies (
@@ -68,6 +71,10 @@ CREATE TABLE anomalies (
   store_id       BIGINT NOT NULL,
   metric_date    DATE NOT NULL,
   metric_key     VARCHAR(12) NOT NULL,
+  channel        VARCHAR(20) NOT NULL DEFAULT '',
+  scope          VARCHAR(12) NOT NULL DEFAULT 'store',
+  parent_id      BIGINT NULL,
+  suppressed     TINYINT(1) NOT NULL DEFAULT 0,
   observed       DOUBLE NOT NULL DEFAULT 0,
   baseline       DOUBLE NOT NULL DEFAULT 0,
   mad            DOUBLE NOT NULL DEFAULT 0,
@@ -82,7 +89,11 @@ CREATE TABLE anomalies (
   payload        JSON,
   created_at     DATETIME NOT NULL,
   updated_at     DATETIME NOT NULL,
-  CONSTRAINT uq_anomaly_store_date_metric UNIQUE (store_id, metric_date, metric_key),
+  CONSTRAINT uq_anomaly_store_date_metric_channel UNIQUE (store_id, metric_date, metric_key, channel),
+  INDEX ix_anomalies_channel (channel),
+  INDEX ix_anomalies_scope (scope),
+  INDEX ix_anomalies_parent_id (parent_id),
+  INDEX ix_anomalies_suppressed (suppressed),
   CONSTRAINT fk_anomaly_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
 );
 

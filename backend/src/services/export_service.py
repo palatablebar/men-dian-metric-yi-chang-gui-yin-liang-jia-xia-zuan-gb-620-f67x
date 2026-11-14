@@ -5,12 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.constants.enums import (
+    ANOMALY_SCOPE_LABELS,
     CHANNEL_LABELS,
     DIRECTION_LABELS,
     METRIC_LABELS,
     REPORT_KIND_LABELS,
     REVIEW_STATUS_LABELS,
     SEVERITY_LABELS,
+    STORE_SCOPE_CHANNEL,
 )
 from src.models.anomaly import Anomaly
 from src.models.attribution import Attribution
@@ -25,11 +27,13 @@ def anomalies_csv(db: Session, store_id: int | None = None, severity: str | None
         stmt = stmt.where(Anomaly.store_id == store_id)
     if severity:
         stmt = stmt.where(Anomaly.severity == severity)
-    rows = db.scalars(stmt.order_by(Anomaly.metric_date.desc(), Anomaly.id)).all()
+    rows = db.scalars(
+        stmt.order_by(Anomaly.suppressed.asc(), Anomaly.metric_date.desc(), Anomaly.id)
+    ).all()
     stores = {store.id: store for store in db.scalars(select(Store)).all()}
     headers = [
-        "门店编码", "门店", "区域", "指标日期", "指标", "观测值", "稳健基线", "MAD",
-        "稳健z", "方向", "严重度", "影响金额(元)", "处理状态", "复核人", "复核备注",
+        "门店编码", "门店", "区域", "指标日期", "检测层级", "渠道", "指标", "观测值", "稳健基线", "MAD",
+        "稳健z", "方向", "严重度", "影响金额(元)", "关联门店异常ID", "是否抑制", "处理状态", "复核人", "复核备注",
     ]
     body = []
     for row in rows:
@@ -40,6 +44,8 @@ def anomalies_csv(db: Session, store_id: int | None = None, severity: str | None
                 store.name if store else "",
                 store.region if store else "",
                 row.metric_date.isoformat(),
+                ANOMALY_SCOPE_LABELS.get(row.scope, row.scope),
+                "" if row.channel == STORE_SCOPE_CHANNEL else CHANNEL_LABELS.get(row.channel, row.channel),
                 METRIC_LABELS.get(row.metric_key, row.metric_key),
                 f"{row.observed:.2f}",
                 f"{row.baseline:.2f}",
@@ -48,6 +54,8 @@ def anomalies_csv(db: Session, store_id: int | None = None, severity: str | None
                 DIRECTION_LABELS.get(row.direction, row.direction),
                 SEVERITY_LABELS.get(row.severity, row.severity),
                 f"{row.impact_amount:.2f}",
+                row.parent_id or "",
+                "是" if row.suppressed else "否",
                 REVIEW_STATUS_LABELS.get(row.status, row.status),
                 row.reviewer or "",
                 row.review_note or "",

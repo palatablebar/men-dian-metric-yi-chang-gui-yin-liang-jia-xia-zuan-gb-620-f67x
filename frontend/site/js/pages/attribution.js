@@ -22,6 +22,9 @@ export const attributionPage = {
     }
     const shares = detail.shares;
     const dims = detail.dimensions || {};
+    const scopeBadge = detail.scope === 'channel'
+      ? `<span class="badge info">${esc(detail.channel_label || '渠道')}</span>`
+      : '<span class="badge">门店总量</span>';
     view.innerHTML = `
       <section class="panel">
         <div class="panel-head">
@@ -37,7 +40,7 @@ export const attributionPage = {
               .slice(0, 12)
               .map(
                 (item) => `<a class="pick ${String(item.id) === String(detail.anomaly_id) ? 'active' : ''}" href="#/attribution?anomaly_id=${item.id}" data-testid="pick-${item.id}">
-                  <b>${esc(item.store_name)}</b>
+                  <b>${esc(item.store_name)} ${item.scope === 'channel' ? `<span class="badge info" style="margin-left:4px">${esc(item.channel_label || item.channel)}</span>` : ''}</b>
                   <span class="mono">${esc(item.metric_date)} · z ${item.robust_z.toFixed(2)} · ${fmtMoney(item.impact_amount)}</span>
                 </a>`,
               )
@@ -48,7 +51,7 @@ export const attributionPage = {
 
       <section class="panel">
         <div class="panel-head">
-          <h2>${esc(detail.store_name)} · ${esc(detail.metric_date)}</h2>
+          <h2>${esc(detail.store_name)} · ${esc(detail.metric_date)} ${scopeBadge}</h2>
           <span class="meta">Δ营收 ${fmtMoney(detail.total_delta)} · 残差 ${detail.residual.toFixed(2)} 元</span>
         </div>
         <div class="panel-body split">

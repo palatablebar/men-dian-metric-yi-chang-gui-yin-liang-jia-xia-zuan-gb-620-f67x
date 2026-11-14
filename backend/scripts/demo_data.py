@@ -45,6 +45,14 @@ HEADLINE_DATE = date(2026, 11, 3)
 HEADLINE_IMPACT = -86_000.0
 SHARES = {"adr": 0.62, "occ": 0.31, "rooms": 0.07}
 
+# 渠道掩盖事件：选一家不在 36 起门店事件计划内的门店（计划占用 index 1..36），
+# OTA 掉量由直连等额补齐 → 门店总量检测无异常，渠道检测独立报出。
+MASKED_STORE_INDEX = 37
+MASKED_DATE = date(2026, 11, 5)
+MASKED_LEAD_DATE = MASKED_DATE - timedelta(days=1)
+MASKED_TRANSFER = 26_000.0
+MASKED_LEAD_TRANSFER = 12_000.0
+
 
 def hash_code(text: str) -> int:
     total = 0
@@ -165,7 +173,13 @@ def aggregate(day: date, channels: list[dict]) -> dict:
 
 
 def build_series(spec: dict, overrides: dict[date, dict] | None = None) -> list[dict]:
-    """构建门店 90 天序列；overrides 用于注入单日售量/均价/可售房量干预。"""
+    """构建门店 90 天序列；overrides 用于注入单日售量/均价/可售房量干预。
+
+    override 额外支持 `channel_transfer`：
+        {"from": "ota", "to": "direct", "revenue": 金额, "lead_revenue": 前一日金额}
+    在门店总量、售量、ADR 完全不变的前提下，把营收在两个渠道间等额转移，
+    用于模拟「直连增长掩盖 OTA 掉量」：门店总量检测无异常，渠道检测独立报出。
+    """
     overrides = overrides or {}
     rows: list[dict] = []
     weekday_counter = 0
@@ -192,8 +206,43 @@ def build_series(spec: dict, overrides: dict[date, dict] | None = None) -> list[
             sold = patch.get("sold") or sold
             adr = patch.get("adr") or adr
             channels = EVENT_CHANNELS if patch.get("mix") else CHANNELS
-        rows.append(aggregate(day, day_channels(spec, day, sold, adr, rooms, 0, channels)))
+        day_row = aggregate(day, day_channels(spec, day, sold, adr, rooms, 0, channels))
+        if patch and patch.get("channel_transfer"):
+            day_row = _apply_channel_transfer(day_row, patch["channel_transfer"])
+        rows.append(day_row)
     return rows
+
+
+def _apply_channel_transfer(day_row: dict, transfer: dict) -> dict:
+    """渠道间等额营收转移：from 减、to 加，门店 revenue/sold 总量不变（自动对平）。
+
+    恒等式约束：每个渠道行始终满足 revenue = adr × rooms_sold，门店行
+    revenue = Σ渠道 revenue、adr = revenue / sold。做法是按源渠道 ADR 折算
+    转移房晚数，再让两个渠道各自按「原 ADR × 新房晚」重算营收；房晚守恒
+    （源减多少、目标加多少），因此门店售量与营收严格不变。
+    """
+    source = transfer["from"]
+    target = transfer["to"]
+    amount = float(transfer["revenue"])
+    channels = {row["channel"]: dict(row) for row in day_row["channels"]}
+    source_adr = float(channels[source]["adr"])
+    moved_sold = max(1, int(round(amount / max(source_adr, 1.0))))
+    moved_sold = min(moved_sold, channels[source]["rooms_sold"])
+    channels[source]["rooms_sold"] -= moved_sold
+    channels[target]["rooms_sold"] += moved_sold
+    # 各渠道 ADR 保持当日原口径，营收严格等于 ADR × 售量 → 渠道行恒等式不破
+    for row in channels.values():
+        row["revenue"] = round(float(row["adr"]) * int(row["rooms_sold"]), 2)
+        row["occupancy"] = round(row["rooms_sold"] / row["rooms_available"], 6) if row["rooms_available"] else 0.0
+    day_row["channels"] = [channels[key] for key in (item[0] for item in CHANNELS)]
+    # 房晚守恒 → 门店售量不变；门店营收为渠道之和（转移前后总额一致，仅取整级微差）
+    day_row["rooms_sold"] = sum(row["rooms_sold"] for row in day_row["channels"])
+    day_row["revenue"] = round(sum(row["revenue"] for row in day_row["channels"]), 2)
+    day_row["adr"] = round(day_row["revenue"] / day_row["rooms_sold"], 4) if day_row["rooms_sold"] else 0.0
+    day_row["occupancy"] = (
+        round(day_row["rooms_sold"] / day_row["rooms_available"], 6) if day_row["rooms_available"] else 0.0
+    )
+    return day_row
 
 
 def median(values: list[float]) -> float:
@@ -409,6 +458,23 @@ def build_dataset() -> dict:
         overrides: dict[date, dict] = {}
         series = build_series(spec)
         planned = dips.get(spec["code"], [])
+        if index == MASKED_STORE_INDEX:
+            # 渠道掩盖事件：连续两日 OTA→直连等额转移，门店总量恒定、渠道层独立异常
+            overrides[MASKED_LEAD_DATE] = {
+                "channel_transfer": {
+                    "from": "ota",
+                    "to": "direct",
+                    "revenue": MASKED_LEAD_TRANSFER,
+                }
+            }
+            overrides[MASKED_DATE] = {
+                "channel_transfer": {
+                    "from": "ota",
+                    "to": "direct",
+                    "revenue": MASKED_TRANSFER,
+                }
+            }
+            series = build_series(spec, overrides)
         for event_date, _ in planned:
             dip_day = event_date - timedelta(days=1)
             dip_index = _index_of(series, dip_day)

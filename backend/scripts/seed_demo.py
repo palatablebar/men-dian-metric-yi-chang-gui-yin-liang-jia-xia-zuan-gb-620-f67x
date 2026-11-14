@@ -119,7 +119,10 @@ def ensure_run(db) -> Run:
 
 
 def ensure_attributions(db) -> int:
-    anomalies = db.scalars(select(Anomaly).order_by(Anomaly.id)).all()
+    # 被门店异常解释而抑制的渠道异常不单独建归因（结论挂在父门店异常上，取数时自动跳转）
+    anomalies = db.scalars(
+        select(Anomaly).where(Anomaly.suppressed.is_(False)).order_by(Anomaly.id)
+    ).all()
     stores = {store.id: store for store in db.scalars(select(Store)).all()}
     for anomaly in anomalies:
         attribution_service.build(db, anomaly, stores.get(anomaly.store_id))
@@ -138,6 +141,7 @@ def ensure_reviews(db) -> None:
                 Anomaly.store_id == store.id,
                 Anomaly.metric_date == date.fromisoformat(metric_date),
                 Anomaly.metric_key == "rev",
+                Anomaly.channel == "",
             )
         )
         if anomaly is None or anomaly.status != "pending":

@@ -26,5 +26,11 @@ class Run(Base):
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
     log_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     seed_key: Mapped[str | None] = mapped_column(String(120), unique=True, nullable=True)
+    # 续跑检查点：{"completed_stores": [id...], "failed_stores": [id...], "reconciliation": {...}}
+    checkpoint: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 续跑批次指向原失败批次
+    recovered_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

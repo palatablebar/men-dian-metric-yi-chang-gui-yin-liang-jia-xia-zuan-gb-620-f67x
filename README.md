@@ -7,7 +7,7 @@
 - **模拟客户**：蓝湾酒店集团 · 经营分析组（8 人），120 家门店（华东/华南/华北/西南/华中 5 个区域，3 个品牌），日报 + 周会决策。
 - **现有工作流**：每天 07:00 PMS 与 3 个 OTA 渠道导出前一营业日数据 → 分析师把 120 行日报粘进 Excel → 看到总营收跌了，再手工按门店/渠道筛 → 周会上口头解释「大概是 OTA 掉了量」。
 - **三个痛点**：
-  1. **跌了不知道哪家店、哪个渠道**：只有总数，没有贡献分解，靠经验猜。
+  1. **跌了不知道哪家店、哪个渠道**：只有总数，没有贡献分解，靠经验猜；单渠道（如 OTA）掉量被直连增长对冲时，门店总量平稳，旧版只看门店汇总根本看不到。
   2. **同比环比混用**：本周比上周、工作日比周末、节假日比平时，基线口径每次都不一样。
   3. **只看总数，量价混在一起**：营收跌了 8%，是房价降了、出租率掉了，还是有房停售，说不清。
 - **上下游**：PMS / OTA 渠道 → **本系统（指标接入 → 异常检测 → 量价分解 → 维度归因 → 结论与报告）** → 区域经理复盘 + 经营周会。
@@ -36,7 +36,7 @@
 | # | 模块 | 对应页面 | 对应 services + controller | 主要 API |
 |---|---|---|---|---|
 | ① | 门店与指标接入 | `#/stores` 门店与指标 | `store_service` + `metric_service` / `store_controller` | `GET/POST /api/stores`、`PATCH /api/stores/{id}`、`GET /api/stores/{id}/series`、`GET /api/metrics` |
-| ② | 异常检测（算法 A） | `#/anomalies` 异常清单 | `detection` + `run_service` / `run_controller` | `POST /api/runs`、`GET /api/runs`、`GET /api/anomalies` |
+| ② | 异常检测（算法 A，门店+渠道双层） | `#/anomalies` 异常清单、`#/runs` 运行记录 | `detection` + `suppression` + `reconcile` + `run_service` / `run_controller` | `POST /api/runs`、`POST /api/runs/{id}/resume`、`GET /api/runs`、`GET /api/anomalies` |
 | ③ | 量价分解（算法 B） | `#/attribution` 归因下钻 | `decompose` + `attribution_service` / `attribution_controller` | `GET /api/attributions/anomaly/{anomaly_id}` |
 | ④ | 维度下钻归因 | `#/attribution` 归因下钻 | `attribution_service`（门店/渠道/房型三维） | 同上（`dimensions` 字段） |
 | ⑤ | 结论与处理工单 | `#/anomalies` 异常清单（抽屉） | `anomaly_service` / `anomaly_controller` | `PATCH /api/anomalies/{id}/review` |
@@ -91,10 +91,11 @@ cd frontend/site && python -m http.server 5173  # 纯静态站，接口走 /api
 ```text
 backend/
   src/{config,constants,controllers,middlewares,models,routes,schemas,services,utils}
-       services/{detection.py,decompose.py,...}     # 两个算法独立模块（纯函数、可单测）
+       services/{detection.py,suppression.py,reconcile.py,decompose.py,...}  # 检测/去重/对账/分解算法（纯函数、可单测）
+       config/schema_sync.py                       # 运行时幂等结构升级（旧库加列、扩唯一键）
   scripts/{demo_data.py,demo_config.py,seed_demo.py,worker_healthcheck.sh}
   migrations/001_core_tables.sql                    # 表结构参考（运行时不执行）
-  tests/{test_detection.py,test_decompose.py,test_seed_data.py,test_permissions.py,test_security.py}
+  tests/{test_detection,test_channel_detection,test_suppression,test_reconcile,test_run_recovery,test_end_to_end_detection,test_decompose,test_seed_data,test_permissions,test_security}.py
 frontend/site/{index.html,css/{tokens,app}.css,js/{config,api,store,ui,app}.js,js/pages/*.js}
 docker-compose.yml  .env  README.md
 ```
@@ -105,7 +106,7 @@ docker-compose.yml  .env  README.md
 |---|---|---|---|
 | `Store` 门店 | `stores` | `code` | model → schema → `store_service` → `store_controller`/`routes/stores` → `api.stores` → 门店页 |
 | `MetricPoint` 指标点 | `metric_points` | `(store_id, stat_date, channel)` | model → `metric_service` → `routes/stores#series`/`routes/metrics` → `api.stores.series` → 门店抽屉 |
-| `Anomaly` 异常 | `anomalies` | `(store_id, metric_date, metric_key)` | model → schema → `anomaly_service` → `anomaly_controller` → `api.anomalies` → 异常清单 |
+| `Anomaly` 异常 | `anomalies` | `(store_id, metric_date, metric_key, channel)` | model → schema → `anomaly_service` → `anomaly_controller` → `api.anomalies` → 异常清单 |
 | `Attribution` 归因 | `attributions` | `anomaly_id` | model → `attribution_service` → `attribution_controller` → `api.attributions` → 归因页 |
 | `Report` 报告 | `reports` | `report_no` | model → schema → `report_service` → `report_controller` → `api.reports` → 报告页 |
 | `Run` 检测批次 | `runs` | `run_no` / `seed_key` | model → `run_service` → `run_controller` → 异常清单「发起检测」 |
@@ -123,6 +124,15 @@ docker-compose.yml  .env  README.md
 - **失败态**：`MAD == 0` 退化为平均绝对偏差，仍为 0 → `degenerate_baseline` 跳过；窗口样本 `< 10` → `insufficient_baseline` 跳过；未延续 → `no_direction_persist` 跳过（均写入 run.metrics.skipped）。
 - **可复现**：纯函数、无网络、无随机；同输入两次输出逐字段一致（`test_detection.py::test_deterministic_output`）。
 
+#### 算法 A 的门店 / 渠道双层检测与同波动去重
+
+- **两层同口径**：门店总量序列与「门店 × 渠道」序列都由 `metric_service` 从同一张 `metric_points` 聚合，复用同一个 `detection.detect_series`；门店 `adr=Σrev/Σsold`、`occ=Σsold/rooms`，渠道行同源，保证可对账。
+- **渠道可见性**：门店总量平稳（如直连增长对冲 OTA 掉量）时，门店层不产异常，但 OTA/直连渠道各自的异常仍以 `scope=channel` 独立进入清单，不再被总量掩盖。
+- **关联与去重**（`suppression.py` 纯函数裁决）：同 `(门店, 日期, 指标)` 下若存在门店总量异常，同向渠道异常 `parent_id` 指向门店异常并置 `suppressed=true`，保留明细供下钻但不计数、不推送；反向渠道异常不抑制。门店平稳时渠道异常 `suppressed=false`、`parent_id=NULL`。
+- **自然键**：异常唯一键扩为 `(store_id, metric_date, metric_key, channel)`，门店总量异常 `channel=""` 哨兵；幂等 upsert，人工复核（confirmed/dismissed）后的结论重跑不覆盖。
+- **对账**（`reconcile.py` 纯函数，结果写入 `run.metrics.reconciliation`）：① 量价恒等式 `revenue = adr × sold`；② 渠道明细 `Σrev / Σsold` 与门店总量逐日对平（金额容差 1 元、售量严格相等）；③ LMDI 三项 + 残差与 Δ营收 闭合。任一不平 → 批次 `partial` 并逐条留痕，不静默改数。
+- **失败续跑**：按门店处理并按门店提交，检查点 `run.checkpoint.completed_stores` 落库；单店失败只回滚该店。失败批次可 `POST /api/runs/{id}/resume` 续跑，新批次只处理未完成门店，原批次置 `recovered`、已落库结果与人工复核全部保留。
+
 ### 算法 B｜LMDI 量价分解 + 维度贡献（`backend/src/services/decompose.py`）
 
 - **恒等式**：`revenue = adr × occupancy × rooms_available`。
@@ -138,12 +148,13 @@ docker-compose.yml  .env  README.md
 | 枚举 | 后端 | 前端 |
 |---|---|---|
 | 角色 `admin/analyst/viewer` | `constants/enums.py::Role`、`constants/roles.py` | `js/config.js::ROLE_LABELS / PERMISSIONS` |
-| 渠道 `ota/direct/corp` | `constants/enums.py::Channel`、`CHANNEL_LABELS` | `js/config.js::ENUMS.channel` |
+| 渠道 `ota/direct/corp` | `constants/enums.py::Channel`、`CHANNEL_LABELS`、`STORE_SCOPE_CHANNEL` | `js/config.js::ENUMS.channel` |
+| 检测层级 `store/channel` | `constants/enums.py::AnomalyScope`、`ANOMALY_SCOPE_LABELS` | `js/config.js::ENUMS.scope` |
 | 指标 `rev/adr/occ` | `constants/enums.py::MetricKey`、`METRIC_LABELS` | `js/config.js::ENUMS.metric / ENUMS.factor` |
 | 严重度 `high/medium/low` | `constants/enums.py::Severity`、`SEVERITY_LABELS` | `js/config.js::ENUMS.severity`、`badgeTone()` |
 | 处理状态 `pending/confirmed/dismissed` | `constants/enums.py::ReviewStatus` | `js/config.js::ENUMS.review`、`reviewTone()` |
 | 方向 `up/down` | `constants/enums.py::Direction` | `js/config.js::ENUMS.direction` |
-| 运行状态 `queued/running/success/partial/failed` | `constants/enums.py::RunStatus` | `js/config.js::ENUMS.runStatus` |
+| 运行状态 `queued/running/success/partial/failed/recovered` | `constants/enums.py::RunStatus` | `js/config.js::ENUMS.runStatus` |
 | 报告类型/状态 `daily/weekly`、`draft/published` | `constants/enums.py::ReportKind/ReportStatus` | `js/config.js::ENUMS.reportKind / reportStatus` |
 
 ## 12. Docker 说明

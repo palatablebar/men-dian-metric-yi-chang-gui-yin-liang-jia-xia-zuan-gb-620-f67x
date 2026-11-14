@@ -23,8 +23,9 @@ export const NAV = [
   { to: '#/stores', no: '02', label: '门店与指标', permission: 'store:read' },
   { to: '#/anomalies', no: '03', label: '异常清单', permission: 'anomaly:read' },
   { to: '#/attribution', no: '04', label: '归因下钻', permission: 'anomaly:read' },
-  { to: '#/reports', no: '05', label: '报告与导出', permission: 'report:read' },
-  { to: '#/audit', no: '06', label: '审计日志', permission: 'audit:read' },
+  { to: '#/runs', no: '05', label: '运行记录', permission: 'run:read' },
+  { to: '#/reports', no: '06', label: '报告与导出', permission: 'report:read' },
+  { to: '#/audit', no: '07', label: '审计日志', permission: 'audit:read' },
 ];
 
 export const ROLE_LABELS = {
@@ -51,8 +52,9 @@ export const ENUMS = {
   metric: { rev: '营收', adr: '平均房价 ADR', occ: '出租率 OCC' },
   direction: { up: '上行', down: '下行' },
   channel: { ota: 'OTA 渠道', direct: '直连/官网', corp: '协议/团队' },
+  scope: { store: '门店总量', channel: '渠道' },
   storeStatus: { open: '营业中', renovating: '局部改造', closed: '暂停营业' },
-  runStatus: { queued: '排队中', running: '执行中', success: '成功', partial: '部分成功', failed: '失败' },
+  runStatus: { queued: '排队中', running: '执行中', success: '成功', partial: '部分成功', failed: '失败', recovered: '失败续跑完成' },
   trigger: { manual: '手动', schedule: '定时', seed: '初始化' },
   reportKind: { daily: '日报', weekly: '周报' },
   reportStatus: { draft: '草稿', published: '已发布' },

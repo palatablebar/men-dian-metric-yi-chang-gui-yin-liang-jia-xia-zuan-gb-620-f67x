@@ -100,6 +100,7 @@ export const api = {
     list: (query) => request('/api/runs', { query }),
     get: (id) => request(`/api/runs/${id}`),
     create: (body) => request('/api/runs', { method: 'POST', body }),
+    resume: (id) => request(`/api/runs/${id}/resume`, { method: 'POST' }),
   },
   reports: {
     list: (query) => request('/api/reports', { query }),

@@ -182,6 +182,62 @@ def series_points(db: Session, start: date, end: date, store_id: int | None = No
     return grouped
 
 
+def channel_series_points(
+    db: Session, start: date, end: date, store_id: int | None = None
+) -> dict[tuple[int, str], list[dict]]:
+    """批量取「门店 × 渠道」日序列，结构与门店序列一致，检测算法可直接复用。
+
+    渠道口径：revenue / rooms_sold 按渠道求和；rooms_available 取当日门店可售房量
+    （可售房量是门店级资源，渠道行只分摊售量），adr = Σrev/Σsold、occ = sold/rooms，
+    与 README §10 门店汇总口径同源，保证渠道明细可与门店总量对账。
+    """
+    stmt = (
+        select(
+            MetricPoint.store_id,
+            MetricPoint.channel,
+            MetricPoint.stat_date,
+            func.sum(MetricPoint.revenue),
+            func.sum(MetricPoint.rooms_sold),
+            func.max(MetricPoint.rooms_available),
+            func.max(MetricPoint.is_weekend),
+        )
+        .where(MetricPoint.stat_date >= start, MetricPoint.stat_date <= end)
+        .group_by(MetricPoint.store_id, MetricPoint.channel, MetricPoint.stat_date)
+        .order_by(MetricPoint.store_id, MetricPoint.channel, MetricPoint.stat_date)
+    )
+    if store_id:
+        stmt = stmt.where(MetricPoint.store_id == store_id)
+    rows = db.execute(stmt).all()
+    grouped: dict[tuple[int, str], list[dict]] = {}
+    for store_key, channel, stat_date, revenue, sold, rooms, weekend in rows:
+        revenue = float(revenue or 0.0)
+        sold = int(sold or 0)
+        rooms = int(rooms or 0)
+        grouped.setdefault((store_key, channel), []).append(
+            {
+                "date": stat_date.isoformat(),
+                "revenue": round(revenue, 2),
+                "rooms_sold": sold,
+                "rooms_available": rooms,
+                "adr": round(revenue / sold, 6) if sold else 0.0,
+                "occupancy": round(sold / rooms, 6) if rooms else 0.0,
+                "is_weekend": bool(weekend),
+            }
+        )
+    return grouped
+
+
+def store_day_channels(db: Session, store_id: int, stat_date: date) -> list[MetricPoint]:
+    """取门店某日全部渠道明细行（对账用），按渠道排序保证确定性。"""
+    return list(
+        db.scalars(
+            select(MetricPoint)
+            .where(MetricPoint.store_id == store_id, MetricPoint.stat_date == stat_date)
+            .order_by(MetricPoint.channel)
+        ).all()
+    )
+
+
 def date_bounds(db: Session) -> tuple[date, date]:
     row = db.execute(select(func.min(MetricPoint.stat_date), func.max(MetricPoint.stat_date))).one()
     if row is None or row[0] is None:

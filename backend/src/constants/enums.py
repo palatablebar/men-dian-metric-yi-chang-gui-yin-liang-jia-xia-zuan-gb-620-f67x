@@ -29,6 +29,9 @@ CHANNEL_LABELS: dict[str, str] = {
 
 CHANNEL_ORDER: list[str] = [Channel.OTA.value, Channel.DIRECT.value, Channel.CORP.value]
 
+# 门店总量口径的哨兵渠道值（非真实渠道，参与异常自然键，避免 NULL 在唯一约束里的方言差异）
+STORE_SCOPE_CHANNEL = ""
+
 
 class MetricKey(StrEnum):
     """可检测/可分解的指标。"""
@@ -80,6 +83,7 @@ class RunStatus(StrEnum):
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
+    RECOVERED = "recovered"
 
 
 RUN_STATUS_LABELS: dict[str, str] = {
@@ -88,6 +92,18 @@ RUN_STATUS_LABELS: dict[str, str] = {
     RunStatus.SUCCESS.value: "成功",
     RunStatus.PARTIAL.value: "部分成功",
     RunStatus.FAILED.value: "失败",
+    RunStatus.RECOVERED.value: "失败续跑完成",
+}
+
+
+class AnomalyScope(StrEnum):
+    STORE = "store"
+    CHANNEL = "channel"
+
+
+ANOMALY_SCOPE_LABELS: dict[str, str] = {
+    AnomalyScope.STORE.value: "门店总量",
+    AnomalyScope.CHANNEL.value: "渠道",
 }
 
 

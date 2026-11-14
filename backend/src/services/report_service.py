@@ -42,7 +42,14 @@ def next_report_no(db: Session) -> str:
 
 
 def build_snapshot(db: Session, start: date, end: date) -> dict:
-    rows = db.scalars(select(Anomaly).where(Anomaly.metric_date >= start, Anomaly.metric_date <= end)).all()
+    # 同波动去重：被门店异常解释而抑制的渠道异常不进报告计数，避免同一波动重复出现
+    rows = db.scalars(
+        select(Anomaly).where(
+            Anomaly.metric_date >= start,
+            Anomaly.metric_date <= end,
+            Anomaly.suppressed.is_(False),
+        )
+    ).all()
     stores = {store.id: store for store in db.scalars(select(Store)).all()}
     severity = {"high": 0, "medium": 0, "low": 0}
     status = {"pending": 0, "confirmed": 0, "dismissed": 0}

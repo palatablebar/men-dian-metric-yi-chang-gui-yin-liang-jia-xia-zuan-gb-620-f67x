@@ -43,10 +43,10 @@ export const overviewPage = {
       </section>
 
       ${statStrip([
-        { label: '异常起数', value: data.anomalies_total, hint: `覆盖 ${data.stores_total} 家门店` },
+        { label: '异常起数', value: data.anomalies_total, hint: `其中渠道独立异常 ${data.channel_anomaly_total || 0} 起` },
         { label: '影响金额', value: fmtMoney(data.impact_total), hint: `待处理 ${fmtMoney(data.impact_pending)}` },
         { label: '待处理', value: data.pending_total, hint: data.worker_alive ? '夜班任务在岗' : '夜班任务心跳超时' },
-        { label: '指标点', value: data.points_total.toLocaleString('zh-CN'), hint: `${data.days} 天 × 3 渠道` },
+        { label: '同波动抑制', value: data.suppressed_total || 0, hint: '渠道波动已关联门店异常，不重复计数' },
       ])}
 
       <div class="grid-2">

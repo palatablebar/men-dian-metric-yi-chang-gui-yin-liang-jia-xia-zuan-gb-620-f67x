@@ -7,6 +7,7 @@ ACTIONS: dict[str, str] = {
     "store.update": "修改门店",
     "run.create": "发起异常检测",
     "run.complete": "检测完成",
+    "run.resume": "失败批次续跑",
     "anomaly.review": "处理异常",
     "attribution.build": "生成归因",
     "report.generate": "生成报告",

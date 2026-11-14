@@ -30,6 +30,16 @@ def get_run(run_id: int, db: Session = Depends(get_db), principal: dict = Depend
     return run_controller.get_run(db, run_id)
 
 
+@router.post("/{run_id}/resume", status_code=201)
+def resume_run(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*RUN_CREATE_ROLES)),
+) -> dict:
+    return run_controller.resume_run(db, run_id, principal, request)
+
+
 @router.post("", status_code=201)
 def create_run(
     payload: RunIn,

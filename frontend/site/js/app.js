@@ -9,12 +9,14 @@ import anomaliesPage from './pages/anomalies.js';
 import attributionPage from './pages/attribution.js';
 import reportsPage from './pages/reports.js';
 import auditPage from './pages/audit.js';
+import runsPage from './pages/runs.js';
 
 const routes = [
   { path: '#/overview', page: overviewPage, permission: 'overview:read' },
   { path: '#/stores', page: storesPage, permission: 'store:read' },
   { path: '#/anomalies', page: anomaliesPage, permission: 'anomaly:read' },
   { path: '#/attribution', page: attributionPage, permission: 'anomaly:read' },
+  { path: '#/runs', page: runsPage, permission: 'run:read' },
   { path: '#/reports', page: reportsPage, permission: 'report:read' },
   { path: '#/audit', page: auditPage, permission: 'audit:read' },
 ];

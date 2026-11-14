@@ -15,5 +15,8 @@ class AnomalyQuery(BaseModel):
     metric_key: str | None = Field(default=None, pattern=r"^(rev|adr|occ)$")
     severity: str | None = Field(default=None, pattern=r"^(high|medium|low)$")
     status: str | None = Field(default=None, pattern=r"^(pending|confirmed|dismissed)$")
+    scope: str | None = Field(default=None, pattern=r"^(store|channel)$")
+    channel: str | None = Field(default=None, pattern=r"^(ota|direct|corp)$")
+    suppressed: bool | None = None
     date_from: str | None = None
     date_to: str | None = None
